@@ -1,0 +1,173 @@
+CHECKPOINT 1:
+
+REPORTER: Jason
+SECTION: IDT
+BUG: instant crashing upon enabling interrupts
+REASON: IDT not set up correctly, multiple:
+    - IDT entries needed to be flagged as PRESENT
+    - IDT entries needed reserved1, reserved2 to be 1
+    - Functions needed to be passed as pointer
+SOLN: implement proper IDT entry formatting. 
+
+REPORTER: Jason
+SECTION: IDT
+BUG: DIV0 handler fills the screen with text
+REASON: Linkage returns to exactly where the error occurred, creating infinite loop 
+SOLN: halt it with a loop?
+
+REPORTER: Jason
+SECTION: IDT
+BUG: random double-fault for some reason
+REASON: unprogrammed PIC does a screwup and issues spurious IRQ0
+SOLN: INITIALIZE D*MN PIC
+
+REPORTER: Charlie
+SECTION: kb_handler
+BUG: upon init 8259A, flooded by unknown exceptions
+SOLN: Unknown but it's gone NOW
+
+REPORTER: Charlie
+SECTION: kb_handler
+BUG: KB-handler does not work
+- generic_fault is called if 0x0D is not set to kb_handler
+- double_fault occurs if 0x0D is set to kb_handler
+- KB is sent to port 0x0D, verified by changing its handler
+- Handler creates double fault, which isn't good either
+SOLN: PIC malfunctions when we don't put a  delay between each outb
+- SOLVED BY PUTTING  DELAY BETWEEN EACH OUTB
+
+REPORTER: Siddarth
+SECTION: IDT
+BUG: Triggering SysCall causes GPF
+REASON: Struct incorrectly setup for syscall index
+SOLN: Updated struct with correct Values (removed asm linkage temporarily)
+->
+ADDENDUM: Jason
+ - syscall should not use "task-gate descriptor" but rather standard "interrupt descriptor"
+ - updated with linkage - works, and can dereference values in registers for args
+
+REPORTER: Siddarth
+SECTION: Paging
+BUG: Kernel kept bootlooping
+REASON: PDE struct initialized with incorrect values for absent entries (address set to 0)
+SOLN: Fixed by removing line that populated the address field
+
+REPORTER: Jason
+Section: Paging/RTC/Keyboard
+BUG: With RTC, keyboard handler, and paging all switched on, occasional pagefault
+REASON: RTC handler was not properly wrapped in ASM linkage
+ - Seems the RTC handler was not using iret, so it would return to improper addresses
+SOLN: Wrap the RTC handler in asm linkage, update IDT to implement asm-linked handler
+
+CHECKPOINT 2:
+
+REPORTER: Jason
+SECTION: Terminal
+BUG: rewritten KB handler doesn't print!
+REASON: inverted conditional when checking KB buffer full-ness 
+- instead of checking to make sure current index was within limits, did the reverse
+BUG2: capslock doesn't invert on each press!
+REASON2: improper xor function: xor with self clears, xor with 1 inverts.
+- also, forgor to update capitalization. 
+BUG3: shift doesn't toggle off!
+- SOLN: Actually, couldn't interpret any key turning off correctly.
+        Keycode was stored as char, not unsigned char, so when casted as int it would sign-extend. 
+        Fix is to store as unsigned char. 
+    - also rewrote shift logic. 
+BUG4: automatic text wrapping doesn't work!
+BUG5: backspace doesn't go back between lines!
+- SOLN (JOINT): Logic error in putc rewrite, revised logic fixed. something about incrementing rows/cols
+BUG6: why's the cursor staying still?
+- REASON: cursor needs to be told where to go!
+BUG7: Backspace too many times would return to grub lol
+- SOLN: modified putc was called when it shouldnt be, allowed for visual backspace
+        even when no chars to remove. Interesting that it returned to grub, IDK why!
+BUG8: Spacebar triggered capslock
+- SOLN: Macro for capslock was wrong, oops. 
+
+
+REPORTER: Christian
+SECTION: RTC Driver
+BUG: setting the frequency of the RTC to 512 Hz or faster did not accurately generate interrupts at the expected frequencies.
+REASON: no idea
+SOLN: no idea
+
+REPORTER: Jason
+SECTION: MULTIPLE 
+BUG: Enabling RTC would cause 0x13 General Protection Fault without even calling handler!
+SOLN: Disable paging.
+REASON: I *THINK* we are running out of paged memory.
+
+REPORTER: Siddarth
+SECTION: IDT
+BUG: Could not create any new global variables
+SOLN: Fixed IDT
+REASON: IDT was broken
+
+REPORTER: Siddarth
+SECTION: Syscall/File System
+BUG: kernel stack getting over written
+SOLN: Fix read data by removing the local buffer and copying data over byte by byte
+REASON: Read data creates a super huge local buffer for larger files which is stored on the stack and overwrites other portions of the kernel space
+
+REPORTER: Siddarth
+SECTION: Syscall
+BUG: Arguments being passed in werent working
+SOLN: Push and pop manually rather than using pushal popal
+REASON:  EAX (retval) was getting overwritten by popal
+
+REPORTER: Jason
+SECTION: Syscall
+BUG: Syserr test would not return anything for test 5
+SOLN: Add extra checks to close syscall (check FD >= 2)
+REASON:  "close" should not be able to run on FD 0 or FD 1, the terminal read/write calls.
+
+REPORTER: Jason
+SECTION: Terminal/Syscall
+BUG: "cat" would consistently fail to print large chunks of files
+SOLN: Edit the manner in which pointers are indexed in terminal write.
+REASON: Terminal write function would attempt to skip null chars, but would also not increment character ptr;
+thus, it would effective actually stop printing altogether when it hit a null char.
+
+REPORTER: Jason
+SECTION: Terminal/Syscall/cat
+BUG: "cat" would double, triple fault if "cat syserr" was called
+SOLN: Undo changes to putc that were used to simplify keyboard handler, make new functions.
+REASON: One of the characters in syserr was being interpreted as a backspace.
+Not an issue, except I rewrote putc to handle those specially.
+
+REPORTER: Jason
+SECTION: Terminal/fish, libc
+BUG: running "fish" after a lot of text scrolling would lead to some or all of the fish getting chopped off
+SOLN: Rewrite scrolling in putc 
+REASON: Original scrolling code would delete attrib data in the memory-mapped video memory.
+This isn't an issue for text writes since text writes will re-set the attrib data, but FISH expects it to be there.
+
+REPORTER: Siddarth
+SECTION: syscall.c
+BUG: cat without args still prints stuff out
+SOLN: Clear buffer every execute
+REASON: Buffer was not getting cleared
+
+REPORTER: Chris
+Section: rtc.c
+BUG: interrupts being dropped when multiple processes use the rtc. Caused stuttering in pingpong and fish
+SOLN: each process has its own ticks counter
+REASON: one global ticks counter did not cover all process ticks
+
+REPORTER: Siddarth 
+Section: lib.h, Terminal
+BUG: Counter would update cursor position on new terminal when switching.
+SOLN: Added cli, and sti to the putc function
+
+REPORTER: Siddarth
+Section: Keyboard, Terminal
+BUG: Spamming enter would occasionally print out "No command found"
+SOLN:: Move the code that puts the '\n' into the buffer into terminal read
+REASON: Timing issue causing keyboard buffer to be incorrectly updated
+
+REPORTER: Charlie
+Section: Paging, vidmap
+BUG: Fish would appear on new console after switching terminals
+SOLN: Remap paging for vidmap to map to the backup video memory page_directory
+REASON: Without remapping, fish would directly write into video memory
